@@ -9,3 +9,8 @@ Influence of maternal diet on ofspring gene expression in rat brain (PFC, hippoc
 ## STEP 1: FASTQC
 Fastqc was run with the [Intelliseq workflow](https://gitlab.com/intelliseq/workflows/raw/dev/src/main/wdl/tasks/generate-fastqc-report/v0.1/generate-fastqc-report.wdl) in cromwell/wdl
 
+to run the fastqc:
+``` 
+java -jar /opt/tools/cromwell-44.jar run https://gitlab.com/intelliseq/workflows/raw/dev/src/main/wdl/tasks/generate-fastqc-report/v0.1/generate-fastqc-report.wdl -i fastqc-inputs.json > cromwell-workflow-logs/KM_11.txt &
+```
+
