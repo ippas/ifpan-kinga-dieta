@@ -1,4 +1,4 @@
-## This code is tu run intelliseq's task of fastqc in batches of 10 files
+## This code is tu run intelliseq's task of fastqc in batches of n files
 
 STEP 1 : This line lists all sample names based on the file_1.fq.gz file_2.fq.gz naming convention and counts them:
 
