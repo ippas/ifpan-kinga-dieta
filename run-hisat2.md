@@ -12,6 +12,5 @@ docker run -d --rm -v $PWD:/data gosborcz/hisat2-samtools samtools sort -o /data
 ```
 docker run -d --rm -v $PWD:/data gosborcz/hisat2-samtools /bin/bash -c "hisat2 -x /data/rn6-ind/genome -1 /data/fq-additional-samples/raw_data/KM_21_1.fq.gz -2 /data/fq-additional-samples/raw_data/KM_21_2.fq.gz --summary-file /data/KM_21.txt --dta-cufflinks | samtools sort -@ 3 -o /data/KM_21.bam -"
 ```
-this maybe works :) 
-
+samtools does not want to take the output from pipe unless you put it in the `/bin/bash -c "command1 | comman2"` syntax, but the the --rm option does not work, but thats fine for now as I want to run it with wdl anyway
 
