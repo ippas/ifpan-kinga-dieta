@@ -29,7 +29,7 @@ to run:
 `java -jar /opt/tools/cromwell-44.jar run align-with-hisat2.wdl -i KM_40.json`
 
 #### step six - run cuffquant to see if the alignment works on an example sample
-`docker run --rm -v $PWD:/data octavianus90/cufflinks_final:latest cuffquant /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf /data/KM_40.bam`
+`docker run --rm -d -v $PWD:/data octavianus90/cufflinks_final:latest cuffquant -o /data /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf /data/KM_40.bam`
 
 
 #### step seven - continue alignment with batches of 10
