@@ -33,5 +33,15 @@ i.e.:
 `docker run --rm -d -v $PWD:/data octavianus90/cufflinks_final:latest cuffquant -o /data /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf /data/KM_40.bam`
 
 
-#### step seven - continue alignment with batches of 10
+#### step seven - continue alignment with batches
+make a list of fist eight samples, create jsons and run the workflow (url) on the part
+```
+ls *1.fq.gz | xargs -i bash -c 'BASENAME=$(echo {} | cut -d "." -f 1 | cut -d "_" -f 1,2); echo $BASENAME' | head -8 > part1.txt
+
+less part1.txt | xargs -i bash -c 'echo "{\"align_to_rat_genome.align_with_hisat2.fastq1\":\"{}_1.fq.gz\",\"align_to_rat_genome.align_with_hisat2.sample_name\":\"{}\",\"align_to_rat_genome.align_with_hisat2.fastq2\":\"{}_2.fq.gz\"}">{}-input.json'
+
+less part1.txt | xargs -i bash -c 'java -jar /opt/tools/cromwell-44.jar run https://raw.githubusercontent.com/gosborcz/workflows/master/align-with-hisat2-to-rat-genome -i {}-input.json > log-{}.txt'
+```
+
+
 
