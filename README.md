@@ -2,6 +2,7 @@
 Influence of maternal diet on ofspring gene expression in rat brain (PFC, hippocampus)
 
 ## SAMPLE LIST:
+[full sample list here](sample-list.tsv)
 80 rat brain samples
 40/40 M/F
 10 samples per group
@@ -11,5 +12,8 @@ Fastqc was run with the [Intelliseq workflow](https://gitlab.com/intelliseq/work
 `docker run --rm -v $PWD:/data ewels/multiqc:latest multiqc /data -o /data`
 [link to fastqc report](http://149.156.177.112/projects/ifpan-kinga-dieta/multiqc_report.html)
 
-## STEP 2 : Alignment - with HISA2 to rat genome
+## STEP 2 : Alignment - with HISAT2 to rat genome
 Rat genome version: `Rattus_norvegicus.Rnor_6.0.dna.toplevel.fa.gz` from ensembl + indexes made with hisat2 previously. For details see [this .md](run-hisat2.md)
+
+## STEP #: TRANSCRIPT ABUNDANCE ESTIMATION
+With cufflings package, see [this file for details](run-cuffquant-and-cuffnorm.md)
