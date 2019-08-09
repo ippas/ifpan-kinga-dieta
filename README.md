@@ -15,5 +15,5 @@ Fastqc was run with the [Intelliseq workflow](https://gitlab.com/intelliseq/work
 ## STEP 2 : Alignment - with HISAT2 to rat genome
 Rat genome version: `Rattus_norvegicus.Rnor_6.0.dna.toplevel.fa.gz` from ensembl + indexes made with hisat2 previously. For details see [this .md](run-hisat2.md)
 
-## STEP #: TRANSCRIPT ABUNDANCE ESTIMATION
+## STEP 3: TRANSCRIPT ABUNDANCE ESTIMATION
 With cufflings package, see [this file for details](run-cuffquant-and-cuffnorm.md)
