@@ -11,10 +11,11 @@ less part6.txt | xargs \
 cuffquant -o /data/cuffquant/{} \
 /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf /data/bam/{}.bam'
 ```
-3. Run cuffnorm on all files:
+3. Run cuffnorm on all files 
 ```
-docker run --rm -d -v $PWD:/data octavianus90/cufflinks_final:latest \ LIST xxxxxx
-
-cuffnorm -o /data/cuffnorm /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf $LIST
+docker run -rm -it -v $PWD:/data octavianus90/cufflinks_final:latest \
+/bin/bash
+  $ LIST=`ls /cuffquant/*/*`
+  $ cuffnorm -o /data/cuffnorm /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf $LIST
 ```
-
+(had to do it in an interactive session, would not work otherwise)
