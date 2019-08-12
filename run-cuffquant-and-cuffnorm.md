@@ -13,8 +13,7 @@ cuffquant -o /data/cuffquant/{} \
 ```
 3. Run cuffnorm on all files:
 ```
-docker run -rm -it -v $PWD:/data octavianus90/cufflinks_final:latest \
-/bin/bash
-  $ LIST=`ls /cuffquant/*/*`
-  $ cuffnorm -o /data/cuffnorm /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf $LIST
+docker run --rm -d -v $PWD:/data octavianus90/cufflinks_final:latest \
+/bin/bash -c 'LIST=`ls /data/cuffquant/*/* && cuffnorm -o /data/cuffnorm -L /data/samplenames.txt /data/rn6/Rattus_norvegicus.Rnor_6.0.90.gtf $LIST'
 ```
+unexpected EOF while looking for matching
