@@ -1,6 +1,10 @@
 # ifpan-kinga-dieta
 Influence of maternal diet on ofspring gene expression in rat brain (PFC, hippocampus)
 
+## Method:
+
+All samples were checked for quality with fastQC v0.11.8 and aligned to a rat reference genome (rn6 from Ensembl database) with hisat2 2.1.0. Cufflinks v 2.2.1 package and GTF from the Ensembl gene database were used to quantify (cuffquant) and normalize (cuffnorm) transcripts to fpkms (Fragments Per Kilobase of transcript per Million fragments mapped). All statisical analyses were performed with R software v3.4. Statistical significance was tested using ANOVA on log2(1 + x) values with false discovery rate adjustment. For post-hoc analysis, pairwise t-tests with Bonferroni corrections were performed. "p" and "fdr" values < 0.05 were considered statistically significant 
+
 ## SAMPLE LIST:
 [full sample list here](sample-list.tsv)
 80 rat brain samples
