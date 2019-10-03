@@ -17,3 +17,7 @@ Rat genome version: `Rattus_norvegicus.Rnor_6.0.dna.toplevel.fa.gz` from ensembl
 
 ## STEP 3: TRANSCRIPT ABUNDANCE ESTIMATION
 With cufflings package, see [this file for details](run-cuffquant-and-cuffnorm.md)
+
+## STEP 4: DATA ANALYSIS
+All data analyses were done in R, see [this notebook](http://149.156.177.112/projects/ifpan-kinga-dieta/analysis/kinga-dieta.nb.html)
+
