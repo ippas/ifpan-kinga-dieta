@@ -1,0 +1,614 @@
+---
+title: "analysis of RNA-Seq data"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r}
+require(edgeR)
+require(preprocessCore)
+require(magrittr)
+require(gplots)
+require(RColorBrewer)
+require(dplyr)
+```
+
+
+the first part of the analysis produces three tables: with fpkms for genes and with log2(fpkm + 1) and with raw counts
+
+```{r results="hide"}
+setwd("/home/ifpan/projects/ifpan-kinga-dieta/analysis")
+
+#load the data
+fpkm <- data.frame(read.table('/home/ifpan/projects/ifpan-kinga-dieta/cuffnorm/genes.fpkm_table',header = TRUE, sep = "\t"))
+samples <- t(data.frame(read.table('samples.table',header = TRUE, sep = "\t")))
+samples.sorted <- download.file('https://raw.githubusercontent.com/ippas/ifpan-kinga-dieta/master/sample-list.tsv','samples.sorted.tsv')
+samples.sorted <- data.frame(read.table('samples.sorted.tsv', header = TRUE, sep = "\t"))
+
+#change cuffnorm names to sample_id
+colnames(fpkm) <- c("transcript ID", samples[2,])
+a <- as.vector(samples.sorted$barcode)
+
+#order the fpkms
+fpkm <- fpkm[,c("transcript ID",a)]
+
+# flip sample 36 with 76!!! (this is a mistake from the experiment)
+colnames(fpkm)[37] <- "c"
+colnames(fpkm)[77] <- "d"
+
+colnames(fpkm)[37] <- "KM_76"
+colnames(fpkm)[77] <- "KM_36"
+
+#order the fpkms again
+fpkm <- fpkm[,c("transcript ID",a)]
+
+# write the files
+write.table(fpkm, file = "all-genes.csv",row.names=FALSE, na="",col.names=TRUE, sep=",")
+
+rownames(fpkm) <- fpkm[,1]
+fpkm.only <- fpkm[,-1]
+
+#normalise quantiles + log transformation
+
+fpkm.normalised <- data.matrix(fpkm.only)
+fpkm.normalised <- normalize.quantiles(fpkm.normalised,copy=FALSE)
+fpkm.log <- log2(fpkm.normalised + 1)
+
+a <- fpkm$`transcript ID`
+fpkm.log <- data.frame(cbind(a, fpkm.log))
+
+colnames(fpkm.log)[1] <- "Transcript_ID"
+
+write.table(fpkm.log, file = "all-genes-log.csv",row.names=FALSE, na="",col.names=TRUE, sep=",")
+
+#load the raw counts to edger
+raw_counts <- data.frame(read.table('/home/ifpan/projects/ifpan-kinga-dieta/cuffnorm/genes.count_table',header = TRUE, sep = "\t"))
+
+#change cuffnorm names to sample_id
+colnames(raw_counts) <- c("transcript ID", samples[2,])
+a <- as.vector(samples.sorted$barcode)
+
+#order the counts
+raw_counts <- raw_counts[,c("transcript ID",a)]
+
+# flip sample 36 with 76!!! (this is a mistake from the experiment)
+colnames(raw_counts)[37] <- "c"
+colnames(raw_counts)[77] <- "d"
+
+colnames(raw_counts)[37] <- "KM_76"
+colnames(raw_counts)[77] <- "KM_36"
+
+#order the counts again
+raw_counts <- raw_counts[,c("transcript ID",a)]
+
+#remove the transcript id
+counts.only <- raw_counts[,-1]
+```
+
+get rnor gene names:
+
+```{r}
+download.file('http://149.156.177.112/projects/ifpan-annaradli-ldopa/rproject/mart_export_rnor.txt','rnor.genes.tsv')
+```
+
+append gene.names to raw counts:
+```{r}
+rnor.gene.list <- data.frame(read.delim("rnor.genes.tsv"))
+
+raw_counts$gene.name <- rnor.gene.list$Gene.name[match(raw_counts$`transcript ID`, rnor.gene.list$Gene.stable.ID)]
+
+rownames(counts.only) <- raw_counts$`transcript ID`
+
+#one of the gene.names has been duplicated:
+anyDuplicated(raw_counts$gene.name)
+raw_counts[raw_counts$gene.name=="Gnrh1",1]
+
+#the ENSRNOG00000013433 transcript is actualy a AABR07018165.1 gene (mistake of unknown source)
+"AABR07018165.1" <- raw_counts$gene.name[7125]
+
+```
+
+
+Create the design matrix (the table samples.sorted was generated with kinga-dieta-analysis.R)
+
+```{r}
+samples.sorted
+```
+
+```{r}
+diets <- rep(c(rep("SD", 10), rep("HFD", 10), rep("HCD", 10), rep("MD", 10)),2)
+samples.info <- data.frame(samples.sorted$barcode,c(rep("male", 40),rep("female", 40)), diets)
+colnames(samples.info)[2] <- "sex"
+
+
+group <- paste(samples.info$sex,samples.info$diets,sep=".")
+
+samples.info <- cbind(samples.info,group=group)
+samples.info
+```
+
+```{r}
+design <- model.matrix(~0+group)
+colnames(design) <- levels(group)
+design
+```
+Create vector for sample of each group for further use:
+
+```{r}
+samples.info$group <- factor(paste(samples.info$sex,samples.info$diets,sep="."))
+
+#create vectors with sample names for each group
+maleSD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "male.SD"]) 
+femaleSD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "female.SD"])
+maleHFD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "male.HFD"]) 
+femaleHFD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "female.HFD"])
+maleHCD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "male.HCD"]) 
+femaleHCD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "female.HCD"])
+maleMD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "male.MD"]) 
+femaleMD <- as.factor(samples.info$samples.sorted.barcode[samples.info$group == "female.MD"])
+```
+
+EdgeR detects significant expression changes in cases where there are outliers in the group, like for this genes:
+
+```{r}
+
+#coefficient of variation for this gene:
+print("Gnb3, outlier:")
+sd(raw_counts[raw_counts$gene.name == "Gnb3",c(2:81)], na.rm=TRUE)/rowMeans(raw_counts[raw_counts$gene.name == "Gnb3",c(2:81)])*100
+
+boxplot(raw_counts[raw_counts$gene.name == "Gnb3",c(2:81)])
+
+#coefficient of variation for a "true gene":
+boxplot(raw_counts[raw_counts$gene.name == "Dock7",c(2:81)])
+
+print("Dock7:")
+sd(raw_counts[raw_counts$gene.name == "Dock7",c(2:81)], na.rm=TRUE)/rowMeans(raw_counts[raw_counts$gene.name == "Dock7",c(2:81)])*100
+
+```
+
+load raw counts into EdgeR:
+```{r}
+counts.edger <- DGEList(counts=counts.only, group=group)
+```
+
+Filter out lowly expressed genes (but it does nothing for this particular group)
+
+```{r}
+keep <- filterByExpr(counts.edger)
+counts.edger <- counts.edger[keep, , keep.lib.sizes=FALSE]
+```
+
+Calculate and displace normalisation factors
+
+```{r}
+counts.edger <- calcNormFactors(counts.edger)
+counts.edger$samples
+```
+Estimate dispresion and fit the model
+
+```{r}
+counts.edger <- estimateDisp(counts.edger, design)
+fit <- glmQLFit(counts.edger, design)
+
+sqrt(counts.edger$common.dispersion) # coefficient of biological variation
+```
+Plot the genewise biological coefficient of variation (BCV) against gene abundance (in log2 counts per million).
+```{r}
+plotBCV(counts.edger) 
+```
+Multidimensional Scaling Plot Of Distances Between Gene Expression Profiles, based on top 10 genes, sex is color coded
+```{r}
+plotMDS(counts.edger, top = 10, labels = group, col=c(rep("cadetblue",40), rep("coral",40))) 
+```
+with groups color-coded (still top 10 genes)
+```{r}
+plotMDS(counts.edger, labels = group, top=100, col=c(rep("cadetblue",10), rep("coral",10), rep("darkolivegreen",10), rep("cyan", 10), rep("cadetblue",10), rep("coral",10), rep("darkolivegreen",10), rep("cyan", 10)), cex = c(0.8)) 
+```
+make contrasts to test for DG genes:
+```{r}
+
+my.contrasts <- makeContrasts(
+  #male vs female
+  MvsF=(female.HCD+female.HFD+female.MD+female.SD)-(male.HCD+male.HFD+male.MD+male.SD),
+  #each diet vs control - effects common for both sexes
+  HCDvsSD=female.HCD+male.HCD-female.SD-male.SD, 
+  HFDvsSD=female.HFD+male.HFD-female.SD-male.SD, 
+  MDvsSD=female.MD+male.MD-female.SD-male.SD, 
+  #comparison of each diet's effects between genders, corrected for standard diet
+  HCD.MvsF=female.HCD-female.SD-male.HCD+male.SD,
+  HFD.MvsF=female.HFD-female.SD-male.HFD+male.SD,
+  MD.MvsF=female.MD-female.SD-male.MD+male.SD, 
+  #effects of diets on females
+  HCD.F=female.HCD-female.SD, 
+  HFD.F=female.HFD-female.SD, 
+  MD.F=female.MD-female.SD,
+   #effects of diets on males
+  HCD.M=male.HCD-male.SD,
+  HFD.M=male.HFD-male.SD, 
+  MD.M=male.MD-male.SD,
+  levels=design)
+
+my.contrasts
+```
+test for DE genes:
+```{r}
+#male vs female
+male.vs.female <- glmQLFTest(fit, contrast=my.contrasts[,"MvsF"])
+
+#each diet vs control - effects common for both sexes
+high.carb.vs.standard.diet <- glmQLFTest(fit, contrast=my.contrasts[,"HCDvsSD"])
+high.fat.vs.standard.diet <- glmQLFTest(fit, contrast=my.contrasts[,"HFDvsSD"])
+mixed.diet.vs.standard.diet <- glmQLFTest(fit, contrast=my.contrasts[,"MDvsSD"])
+
+#comparison of each diet's effects between genders, corrected for standard diet
+high.carb.male.vs.female <- glmQLFTest(fit, contrast=my.contrasts[,"HCD.MvsF"])
+high.fat.male.vs.female <- glmQLFTest(fit, contrast=my.contrasts[,"HFD.MvsF"])
+mixed.diet.male.vs.female <- glmQLFTest(fit, contrast=my.contrasts[,"MD.MvsF"])
+
+#effects of diets on females
+high.carb.vs.standard.diet.females <- glmQLFTest(fit, contrast=my.contrasts[,"HCD.F"])
+high.fat.vs.standard.diet.females <- glmQLFTest(fit, contrast=my.contrasts[,"HFD.F"])
+mixed.diet.vs.standard.diet.females <- glmQLFTest(fit, contrast=my.contrasts[,"MD.F"])
+
+   #effects of diets on males
+high.carb.vs.standard.diet.males <- glmQLFTest(fit, contrast=my.contrasts[,"HCD.M"])
+high.fat.vs.standard.diet.males <- glmQLFTest(fit, contrast=my.contrasts[,"HFD.M"])
+mixed.diet.vs.standard.diet.males <- glmQLFTest(fit, contrast=my.contrasts[,"MD.M"])
+
+```
+
+See the top genes:
+```{r}
+#male vs female
+male.vs.female.fdr <- topTags(male.vs.female, n="inf")
+
+#each diet vs control - effects common for both sexes
+high.carb.vs.standard.diet.fdr <- topTags(high.carb.vs.standard.diet, n="inf")
+high.fat.vs.standard.diet.fdr <- topTags(high.fat.vs.standard.diet, n="inf")
+mixed.diet.vs.standard.diet.fdr <- topTags(mixed.diet.vs.standard.diet, n="inf")
+
+#comparison of each diet's effects between genders, corrected for standard diet
+high.carb.male.vs.female.fdr <- topTags(high.carb.male.vs.female, n="inf")
+high.fat.male.vs.female.fdr <- topTags(high.fat.male.vs.female, n="inf")
+mixed.diet.male.vs.female.fdr <- topTags(mixed.diet.male.vs.female, n="inf")
+
+#effects of diets on females
+high.carb.vs.standard.diet.females.fdr <- topTags(high.carb.vs.standard.diet.females, n="inf")
+high.fat.vs.standard.diet.females.fdr <- topTags(high.fat.vs.standard.diet.females, n="inf")
+mixed.diet.vs.standard.diet.females.fdr <- topTags(mixed.diet.vs.standard.diet.females, n="inf")
+
+   #effects of diets on males
+high.carb.vs.standard.diet.males.fdr <- topTags(high.carb.vs.standard.diet.males, n="inf")
+high.fat.vs.standard.diet.males.fdr <- topTags(high.fat.vs.standard.diet.males, n="inf")
+mixed.diet.vs.standard.diet.males.fdr <- topTags(mixed.diet.vs.standard.diet.males, n="inf")
+
+```
+
+Create a dataframe with all the fdr's:
+
+```{r}
+results <- data.frame(raw_counts$`transcript ID`, 
+                      raw_counts$gene.name)
+colnames(results) <- c("transcript_id", "gene_name")
+
+#male vs female
+results$m_vs_f_fdr <- male.vs.female.fdr$table$FDR[match(results$transcript_id, rownames(male.vs.female.fdr$table))]
+
+#each diet vs control - effects common for both sexes
+results$hcd_vs_sd_fdr <- high.carb.vs.standard.diet.fdr$table$FDR[match(results$transcript_id, rownames(high.carb.vs.standard.diet.fdr$table))]
+results$hfd_vs_sd_fdr <- high.fat.vs.standard.diet.fdr$table$FDR[match(results$transcript_id, rownames(high.fat.vs.standard.diet.fdr$table))]
+results$md_vs_sd_fdr <- mixed.diet.vs.standard.diet.fdr$table$FDR[match(results$transcript_id, rownames(mixed.diet.vs.standard.diet.fdr$table))]
+
+#comparison of each diet's effects between genders, corrected for standard diet
+results$hcd_m_vs_f_fdr <- high.carb.male.vs.female.fdr$table$FDR[match(results$transcript_id, rownames(high.carb.male.vs.female.fdr$table))]
+results$hfd_m_vs_f_fdr <- high.fat.male.vs.female.fdr$table$FDR[match(results$transcript_id, rownames(high.fat.male.vs.female.fdr$table))]
+results$md_m_vs_f_fdr <- mixed.diet.male.vs.female.fdr$table$FDR[match(results$transcript_id, rownames(mixed.diet.male.vs.female.fdr$table))]
+
+#effects of diets on females
+results$hcd_f_fdr <- high.carb.vs.standard.diet.females.fdr$table$FDR[match(results$transcript_id, rownames(high.carb.vs.standard.diet.females.fdr$table))]
+results$hfd_f_fdr <- high.fat.vs.standard.diet.females.fdr$table$FDR[match(results$transcript_id, rownames(high.fat.vs.standard.diet.females.fdr$table))]
+results$md_f_fdr <- mixed.diet.vs.standard.diet.females.fdr$table$FDR[match(results$transcript_id, rownames(mixed.diet.vs.standard.diet.females.fdr$table))]
+
+
+#effects of diets on males
+results$hcd_m_fdr <- high.carb.vs.standard.diet.males.fdr$table$FDR[match(results$transcript_id, rownames(high.carb.vs.standard.diet.males.fdr$table))]
+results$hfd_m_fdr <- high.fat.vs.standard.diet.males.fdr$table$FDR[match(results$transcript_id, rownames(high.fat.vs.standard.diet.males.fdr$table))]
+results$md_m_fdr <- mixed.diet.vs.standard.diet.males.fdr$table$FDR[match(results$transcript_id, rownames(mixed.diet.vs.standard.diet.males.fdr$table))]
+
+```
+
+Add log2(fpkm + 1) to the results table:
+```{r}
+results <- cbind(results, fpkm.log[,-1])
+```
+
+save te results:
+```{r}
+write.table(results, file = "all-genes-log-all-comparisons.csv",row.names=FALSE, na="",col.names=TRUE, sep=",")
+```
+
+count number of DE genes in each group:
+```{r}
+significance <- function(x) {
+nrow(na.omit(results[x<0.05,]))
+}
+
+sapply(results[3:15], significance)
+```
+## test for a list of speficic genes, related to autism. List of genes:
+
+ANKRD11, ASXL3, BCL11A, CACNA1D,CNTNAP2 (found as: AABR07060487.1), EN2, FABP (I have found Fabp1), FMR1, FOXP2,GABRB3, HTR2A, ITGB3 , KMT2C (found as AABR07059168.2), MECP2, NLGN3, NRXN1, OXTR, PTEN, RELN, SHANK2, SHANK3, SLC6A4, SYN1, WNT2
+
+```{r}
+autism.genes <- c("Ankrd11", "Asxl3", "Bcl11a", "Cacna1d", "AABR07060487.1", "En2", "Fabp1", "Fmr1", "Foxp2", "Gabrb3", "Htr2a", "Itgb3", "AABR07059168.2", "Mecp2", "Nlgn3", "Nrxn1", "Oxtr", "Pten", "Reln", "Shank2", "Shank3", "Slc6a4", "Syn1", "Wnt2")
+```
+
+
+```{r}
+selected.autism.genes <- results[match(autism.genes, results$gene_name),]
+```
+
+```{r}
+sex <- samples.info$sex
+diet <- samples.info$diets
+samples <- samples.info$samples.sorted.barcode
+autism.genes.anova <- data.frame(selected.autism.genes$transcript_id, selected.autism.genes$gene_name)
+
+
+stat <- function(x) {
+  y <- unlist(x, use.names = FALSE)
+  summary(aov(y ~ sex * diet)) %>%
+  unlist %>%
+  extract(c("Pr(>F)1","Pr(>F)2","Pr(>F)3"))
+}
+
+autism.genes.anova$p.sex <- apply(selected.autism.genes[,12:91], 1, stat)[1,] %>% p.adjust(., method="fdr")
+
+autism.genes.anova$p.diet <- apply(selected.autism.genes[,12:91], 1, stat)[2,] %>% p.adjust(., method="fdr")
+
+autism.genes.anova$p.interaction <- apply(selected.autism.genes[,12:91], 1, stat)[3,] %>% p.adjust(., method="fdr")
+ 
+ stat.post.hoc <- function(x) {
+  y <- unlist(x, use.names = FALSE)
+  p.diet <- pairwise.t.test(y, diet, p.adjust.method = "none") %>%
+  unlist %>% extract(c("p.value3","p.value6","p.value9"))
+  y <- unlist(x, use.names = FALSE)
+  p.group <- pairwise.t.test(y, group, p.adjust.method = "none") %>%
+  unlist %>% extract(c("p.value3","p.value10","p.value17", "p.value35", "p.value42", "p.value49" ))
+  c(p.diet, p.group) %>% p.adjust(., method = "bonferroni")
+ }
+  
+autism.genes.anova$p.hcd <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[1,]
+autism.genes.anova$p.hfd <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[2,]
+autism.genes.anova$p.md <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[3,]
+autism.genes.anova$p.hcd.f <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[4,]
+autism.genes.anova$p.hfd.f <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[5,]
+autism.genes.anova$p.md.f <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[6,]
+autism.genes.anova$p.hcd.m <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[7,]
+autism.genes.anova$p.hfd.m <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[8,]
+autism.genes.anova$p.md.m <- apply(selected.autism.genes[,12:91], 1, stat.post.hoc)[9,]
+
+autism.genes.anova <- cbind(autism.genes.anova, fpkm.log[match(autism.genes.anova$selected.autism.genes.transcript_id, rownames(fpkm.log)),-1])
+
+write.csv(autism.genes.anova, file="autism-genes-anova.csv", row.names = FALSE)
+write.csv(selected.autism.genes, file="autism-genes-fpkm-edger-fdr.csv")
+
+```
+
+parametric analysis for all genes with ANOVA:
+
+```{r}
+results.aov <- data.frame(results$transcript_id, results$gene_name)
+
+results.aov$p.sex <- apply(fpkm.log[,-1], 1, stat)[1,] %>% p.adjust(., method="fdr")
+results.aov$p.diet <- apply(fpkm.log[,-1], 1, stat)[2,] %>% p.adjust(., method="fdr")
+results.aov$p.interaction <- apply(fpkm.log[,-1], 1, stat)[3,] %>% p.adjust(., method="fdr")
+
+results.aov$p.hcd <- apply(fpkm.log[,-1], 1, stat.post.hoc)[1,]
+results.aov$p.hfd <- apply(fpkm.log[,-1], 1, stat.post.hoc)[2,]
+results.aov$p.md <- apply(fpkm.log[,-1], 1, stat.post.hoc)[3,]
+results.aov$p.hcd.f <- apply(fpkm.log[,-1], 1, stat.post.hoc)[4,]
+results.aov$p.hfd.f <- apply(fpkm.log[,-1], 1, stat.post.hoc)[5,]
+results.aov$p.md.f <- apply(fpkm.log[,-1], 1, stat.post.hoc)[6,]
+results.aov$p.hcd.m <- apply(fpkm.log[,-1], 1, stat.post.hoc)[7,]
+results.aov$p.hfd.m <- apply(fpkm.log[,-1], 1, stat.post.hoc)[8,]
+results.aov$p.md.m <- apply(fpkm.log[,-1], 1, stat.post.hoc)[9,]
+
+results.aov <- cbind(results.aov, fpkm.log[,-1])
+
+write.csv(results.aov, file="all-genes-anova.csv", row.names = FALSE)
+
+significance <- function(x) {
+nrow(na.omit(results.aov[x<0.05,]))
+}
+
+sapply(results.aov[3:14], significance)
+```
+
+# plot heatmaps for top hfd genes
+
+```{r}
+
+results.aov <- results.aov[rowSums(is.na(results.aov)) < 5, ] # remove NA
+
+results.aov[,maleHCD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$male.HCD.SD
+results.aov[,femaleHCD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$female.HCD.SD
+results.aov[,maleHFD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$male.HFD.SD
+results.aov[,femaleHFD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$female.HfD.SD
+results.aov[,maleSD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$male.SD.SD
+results.aov[,femaleSD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$female.SD.SD
+results.aov[,maleMD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$male.MD.SD
+results.aov[,femaleMD] %>% apply(1, sd, na.rm = TRUE) -> results.aov$female.MD.SD
+
+results.aov[,maleHCD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$male.HCD.mean
+results.aov[,femaleHCD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$female.HCD.mean
+results.aov[,maleHFD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$male.HFD.mean
+results.aov[,femaleHFD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$female.HFD.mean
+results.aov[,maleSD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$male.SD.mean
+results.aov[,femaleSD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$female.SD.mean
+results.aov[,maleMD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$male.MD.mean
+results.aov[,femaleMD] %>% apply(1, mean, na.rm = TRUE) -> results.aov$female.MD.mean
+
+results.aov$male.hcd.SD.to.mean <- results.aov$male.HCD.SD / results.aov$male.HCD.mean
+results.aov$female.hcd.SD.to.mean <- results.aov$female.HCD.SD / results.aov$female.HCD.mean
+results.aov$male.hfd.SD.to.mean <- results.aov$male.HFD.SD / results.aov$male.HFD.mean
+results.aov$female.hfd.SD.to.mean <- results.aov$female.HfD.SD / results.aov$female.HFD.mean
+results.aov$male.sd.SD.to.mean <- results.aov$male.SD.SD / results.aov$male.SD.mean
+results.aov$female.sd.SD.to.mean <- results.aov$female.SD.SD / results.aov$female.SD.mean
+results.aov$male.md.SD.to.mean <- results.aov$male.MD.SD / results.aov$male.MD.mean
+results.aov$female.md.SD.to.mean <- results.aov$female.MD.SD / results.aov$female.MD.mean
+
+
+mypalette <- brewer.pal(11,"RdBu")
+morecols <- colorRampPalette(mypalette)
+
+group.names <- unique(as.character(samples.info$group[order(samples.info$diets)]))
+
+col.labels <- c(rep("", 5), group.names[1], rep(" ", 9), 
+                group.names[2], rep(" ", 9),
+                group.names[3], rep(" ", 9),
+                group.names[4], rep(" ", 9),
+                group.names[5], rep(" ", 9),
+                group.names[6], rep(" ", 9),
+                group.names[7], rep(" ", 9),
+                group.names[8], rep(" ", 4)
+               )
+
+
+cut.threshold <- function(x, threshold = 2.5) {
+  x[x > threshold] <- threshold
+  x[x < -threshold] <- -threshold
+  x
+}
+
+sds <- colnames(results.aov[,95:102]) 
+sd.to.mean <- colnames(results.aov[,111:118])
+samples <- as.character(samples.info$samples.sorted.barcode)
+
+filter_for_10 <- function(x, cutoff) {
+  result = (length(which(as.numeric(x[samples]) > cutoff)) >= 10)
+  return(result)
+}
+```
+
+##plot top genes:
+```{r}
+results.aov %>% filter(p.diet < 0.01) %>% filter_at(vars(sd.to.mean), all_vars(.<0.1)) -> to.plot
+
+to.plot <- to.plot[(apply(to.plot, 1, filter_for_10, cutoff = 7)),]
+
+write.csv(to.plot, file="selected-genes-custom-filtering.csv", row.names = FALSE)
+```
+
+actual plotting:
+```{r}
+samples.to.plot <- as.character(samples.info$samples.sorted.barcode[order(samples.info$diets)])
+
+to.plot[,samples.to.plot] %>%
+  apply(1, scale) %>%
+  t %>%
+  apply(1, cut.threshold, threshold = 3) %>%
+  t %>%
+  `colnames<-`(colnames(to.plot[,samples.to.plot])) %>%
+  heatmap.2(
+    distfun = function(x) as.dist(1-cor(t(x))),
+    col=rev(morecols(50)),trace="none",
+    main="",
+    Colv = FALSE,
+    scale="row",
+    colsep = c(10,20,30,40,50,60,70),
+    sepwidth = c(0.3,0.3),
+    labRow=to.plot$results.gene_name,
+    labCol=col.labels,         
+    srtCol = 45,
+    cexRow = 0.6,
+    offsetCol = 0.1
+  )
+```
+
+
+
+```{r}
+
+results <- results[rowSums(is.na(results)) < 5, ] # remove NA
+
+results[,maleHCD] %>% apply(1, sd, na.rm = TRUE) -> results$male.HCD.SD
+results[,femaleHCD] %>% apply(1, sd, na.rm = TRUE) -> results$female.HCD.SD
+results[,maleHFD] %>% apply(1, sd, na.rm = TRUE) -> results$male.HFD.SD
+results[,femaleHFD] %>% apply(1, sd, na.rm = TRUE) -> results$female.HfD.SD
+results[,maleSD] %>% apply(1, sd, na.rm = TRUE) -> results$male.SD.SD
+results[,femaleSD] %>% apply(1, sd, na.rm = TRUE) -> results$female.SD.SD
+results[,maleMD] %>% apply(1, sd, na.rm = TRUE) -> results$male.MD.SD
+results[,femaleMD] %>% apply(1, sd, na.rm = TRUE) -> results$female.MD.SD
+
+results[,maleHCD] %>% apply(1, mean, na.rm = TRUE) -> results$male.HCD.mean
+results[,femaleHCD] %>% apply(1, mean, na.rm = TRUE) -> results$female.HCD.mean
+results[,maleHFD] %>% apply(1, mean, na.rm = TRUE) -> results$male.HFD.mean
+results[,femaleHFD] %>% apply(1, mean, na.rm = TRUE) -> results$female.HFD.mean
+results[,maleSD] %>% apply(1, mean, na.rm = TRUE) -> results$male.SD.mean
+results[,femaleSD] %>% apply(1, mean, na.rm = TRUE) -> results$female.SD.mean
+results[,maleMD] %>% apply(1, mean, na.rm = TRUE) -> results$male.MD.mean
+results[,femaleMD] %>% apply(1, mean, na.rm = TRUE) -> results$female.MD.mean
+
+results$male.hcd.SD.to.mean <- results$male.HCD.SD / results$male.HCD.mean
+results$female.hcd.SD.to.mean <- results$female.HCD.SD / results$female.HCD.mean
+results$male.hfd.SD.to.mean <- results$male.HFD.SD / results$male.HFD.mean
+results$female.hfd.SD.to.mean <- results$female.HfD.SD / results$female.HFD.mean
+results$male.sd.SD.to.mean <- results$male.SD.SD / results$male.SD.mean
+results$female.sd.SD.to.mean <- results$female.SD.SD / results$female.SD.mean
+results$male.md.SD.to.mean <- results$male.MD.SD / results$male.MD.mean
+results$female.md.SD.to.mean <- results$female.MD.SD / results$female.MD.mean
+
+
+#plot results from EdgeR
+
+results[which(results$hfd_vs_sd_fdr < 0.001),] %>% filter_at(vars(sd.to.mean), all_vars(.<0.03)) -> to.plot
+
+to.plot[,samples.to.plot] %>%
+  apply(1, scale) %>%
+  t %>%
+  apply(1, cut.threshold, threshold = 3) %>%
+  t %>%
+  `colnames<-`(colnames(to.plot[,samples.to.plot])) %>%
+  heatmap.2(
+    distfun = function(x) as.dist(1-cor(t(x))),
+    col=rev(morecols(50)),trace="none",
+    Colv = FALSE,
+    main="",
+    scale="row",
+    colsep = c(10,20,30,40,50,60,70),
+    sepwidth = c(0.3,0.3),
+    labRow=to.plot$gene_name,
+    labCol=col.labels,         
+    srtCol = 45,
+    cexRow = 0.6,
+    offsetCol = 0.1
+  )
+
+```
+
+
+
+
+## Extract top genes from each diet and investigate their interaction with sex:
+
+```{r}
+diet.results <- subset(results.aov, p.diet < 0.05)
+
+top.200.hcd <- top_n(diet.results, -200, p.hcd)
+top.200.hfd <- top_n(diet.results, -200, p.hfd)
+top.200.md <- top_n(diet.results, -200, p.md)
+
+top.200.hcd$results.gene_name[top.200.hcd$p.interaction<0.05]
+top.200.hfd$results.gene_name[top.200.hfd$p.interaction<0.05]
+top.200.md$results.gene_name[top.200.md$p.interaction<0.05]
+
+write.csv(top.200.hcd, file="top-200-hcd.csv", row.names = FALSE)
+write.csv(top.200.hfd, file="top-200-hfd.csv", row.names = FALSE)
+write.csv(top.200.md, file="top-200-md.csv", row.names = FALSE)
+
+```
+
+
