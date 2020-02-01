@@ -83,8 +83,6 @@ to.plot.6a$marker_fold_change <- layer.6a$V2[match(to.plot.6a$results.gene_name,
 to.plot.layer.2.3$marker_fold_change <- layer.2.3$V2[match(to.plot.layer.2.3$results.gene_name, layer.2.3$genes.layer.2.3)]
 
 
-to.plot.6a <- to.plot.6a[1:50,]
-
 nrow(filter(to.plot.4, p.diet < 0.05))
 nrow(filter(to.plot.5, p.diet < 0.05))
 nrow(filter(to.plot.6a, p.diet < 0.05))
@@ -92,7 +90,6 @@ nrow(filter(to.plot.layer.2.3, p.diet < 0.05))
 
 
 nrow(filter(to.plot.layer.2.3, (p.diet < 0.05) & (p.hcd < 0.05) & ((male.SD.mean+female.SD.mean)-(male.HFD.mean+female.HFD.mean) > 0)))
-
 #this has been done for all the postohocs and the change directions UP and DOWN
 
 
