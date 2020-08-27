@@ -32,4 +32,4 @@ Rat genome version: `Rattus_norvegicus.Rnor_6.0.dna.toplevel.fa.gz` from ensembl
 With cufflings package, see [this file for details](run-cuffquant-and-cuffnorm.md)
 
 ## STEP 4: DATA ANALYSIS
-All data analyses were done in R, see [this notebook](kinga-dieta.Rmd)
+All data analyses were done in R, see [this notebook](kinga-dieta.Rmd). For behavioral data analysis [see this script](behavioral-data-analysis.R)
